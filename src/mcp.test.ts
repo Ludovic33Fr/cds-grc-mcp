@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import { getInfoSeller, productList, productGet, productCount, productGetVariants } from './mcp.js';
-import { products } from './mockData.js';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { getInfoSeller, productList, productGet, productCount, productGetVariants, orderList, orderGet, orderAcknowledge, orderShip, orderCancel } from './mcp.js';
+import { products, orders, resetOrdersData } from './mockData.js';
 
 describe('getInfoSeller', () => {
   it('should return seller information when valid oauthToken is provided', async () => {
@@ -460,5 +460,266 @@ describe('productGetVariants', () => {
     expect(result.error).toBeDefined();
     expect(result.error.code).toBe(429);
     expect(result.error.message).toContain("Limit exceeds maximum allowed value");
+  });
+});
+
+// ===== TESTS DES MÉTHODES DE GESTION DES COMMANDES =====
+
+describe('orderList', () => {
+    beforeEach(() => {
+    resetOrdersData();
+  });
+
+  it('should return all orders when no filters are applied', async () => {
+    const result = await orderList({});
+    expect(result.items).toHaveLength(4);
+    expect(result.itemsPerPage).toBe(100);
+    expect(result.nextCursor).toBeNull();
+  });
+
+  it('should filter orders by status', async () => {
+    const result = await orderList({ filters: { status: 'pending' } });
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].status).toBe('pending');
+  });
+
+  it('should filter orders by multiple statuses', async () => {
+    const result = await orderList({ filters: { status: ['pending', 'acknowledged'] } });
+    expect(result.items).toHaveLength(2);
+    expect(result.items.every(order => ['pending', 'acknowledged'].includes(order.status))).toBe(true);
+  });
+
+  it('should filter orders by salesChannel', async () => {
+    const result = await orderList({ filters: { salesChannel: 'cdiscount' } });
+    expect(result.items).toHaveLength(4);
+    expect(result.items.every(order => order.salesChannel === 'cdiscount')).toBe(true);
+  });
+
+  it('should filter orders by date range', async () => {
+    const result = await orderList({ 
+      filters: { 
+        createdAtFrom: '2025-07-13T00:00:00Z',
+        createdAtTo: '2025-07-15T23:59:59Z'
+      } 
+    });
+    expect(result.items).toHaveLength(3);
+  });
+
+  it('should filter orders by customer email', async () => {
+    const result = await orderList({ filters: { customerEmail: 'jean.dupont' } });
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].customer.email).toContain('jean.dupont');
+  });
+
+  it('should filter orders by reference', async () => {
+    const result = await orderList({ filters: { reference: 'CDS-2025-001' } });
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].reference).toBe('CDS-2025-001');
+  });
+
+  it('should sort orders by createdAt desc by default', async () => {
+    const result = await orderList({ limit: 4 });
+    const dates = result.items.map(order => new Date(order.createdAt));
+    expect(dates[0] > dates[1]).toBe(true);
+    expect(dates[1] > dates[2]).toBe(true);
+    expect(dates[2] > dates[3]).toBe(true);
+  });
+
+  it('should sort orders by totalAmount asc', async () => {
+    const result = await orderList({ sortBy: 'totalAmount', sortDir: 'asc', limit: 4 });
+    const amounts = result.items.map(order => order.totalAmount);
+    expect(amounts[0] <= amounts[1]).toBe(true);
+    expect(amounts[1] <= amounts[2]).toBe(true);
+    expect(amounts[2] <= amounts[3]).toBe(true);
+  });
+
+  it('should handle pagination with cursor', async () => {
+    const result1 = await orderList({ limit: 2 });
+    expect(result1.items).toHaveLength(2);
+    expect(result1.nextCursor).toBeTruthy();
+
+    const result2 = await orderList({ limit: 2, cursor: result1.nextCursor });
+    expect(result2.items).toHaveLength(2);
+    expect(result2.nextCursor).toBeNull();
+  });
+
+  it('should return error for invalid limit < 1', async () => {
+    const result = await orderList({ limit: 0 });
+    expect(result.error).toBeDefined();
+    expect(result.error.code).toBe(400);
+  });
+
+  it('should return error for invalid limit > 1000', async () => {
+    const result = await orderList({ limit: 1001 });
+    expect(result.error).toBeDefined();
+    expect(result.error.code).toBe(429);
+  });
+
+  it('should return error for invalid cursor format', async () => {
+    const result = await orderList({ cursor: 'invalid-cursor' });
+    expect(result.error).toBeDefined();
+    expect(result.error.code).toBe(400);
+  });
+});
+
+describe('orderGet', () => {
+  beforeEach(() => {
+    resetOrdersData();
+  });
+
+  it('should return order details when valid orderId is provided', async () => {
+    const result = await orderGet({ orderId: 'ORD-001' });
+    expect(result.id).toBe('ORD-001');
+    expect(result.reference).toBe('CDS-2025-001');
+    expect(result.status).toBe('pending');
+    expect(result.customer.email).toBe('jean.dupont@email.com');
+  });
+
+  it('should return error when orderId does not exist', async () => {
+    const result = await orderGet({ orderId: 'NONEXISTENT' });
+    expect(result.error).toBeDefined();
+    expect(result.error.code).toBe(404);
+    expect(result.error.message).toBe('Order not found');
+  });
+});
+
+describe('orderAcknowledge', () => {
+  beforeEach(() => {
+    resetOrdersData();
+  });
+
+  it('should acknowledge a pending order successfully', async () => {
+    const result = await orderAcknowledge({ orderId: 'ORD-001' });
+    expect(result.success).toBe(true);
+    expect(result.message).toBe('Order acknowledged successfully');
+    expect(result.order.status).toBe('acknowledged');
+    expect(result.order.acknowledgedAt).toBeDefined();
+  });
+
+  it('should return error when orderId does not exist', async () => {
+    const result = await orderAcknowledge({ orderId: 'NONEXISTENT' });
+    expect(result.error).toBeDefined();
+    expect(result.error.code).toBe(404);
+  });
+
+  it('should return error when order is not in pending status', async () => {
+    const result = await orderAcknowledge({ orderId: 'ORD-003' }); // shipped order
+    expect(result.error).toBeDefined();
+    expect(result.error.code).toBe(400);
+    expect(result.error.message).toContain('cannot be acknowledged');
+  });
+
+  it('should update all items status to acknowledged', async () => {
+    await orderAcknowledge({ orderId: 'ORD-001' });
+    const order = orders.find(o => o.id === 'ORD-001');
+    expect(order?.items.every(item => item.status === 'acknowledged')).toBe(true);
+  });
+});
+
+describe('orderShip', () => {
+  beforeEach(() => {
+    resetOrdersData();
+  });
+
+  it('should ship an acknowledged order successfully', async () => {
+    const result = await orderShip({ 
+      orderId: 'ORD-002', 
+      trackingNumber: 'TRK987654321', 
+      carrier: 'Chronopost' 
+    });
+    expect(result.success).toBe(true);
+    expect(result.message).toBe('Order shipped successfully');
+    expect(result.order.status).toBe('shipped');
+    expect(result.order.trackingNumber).toBe('TRK987654321');
+    expect(result.order.carrier).toBe('Chronopost');
+  });
+
+  it('should return error when orderId does not exist', async () => {
+    const result = await orderShip({ 
+      orderId: 'NONEXISTENT', 
+      trackingNumber: 'TRK123', 
+      carrier: 'Test' 
+    });
+    expect(result.error).toBeDefined();
+    expect(result.error.code).toBe(404);
+  });
+
+  it('should return error when order is not in acknowledged status', async () => {
+    const result = await orderShip({ 
+      orderId: 'ORD-001', // pending order
+      trackingNumber: 'TRK123', 
+      carrier: 'Test' 
+    });
+    expect(result.error).toBeDefined();
+    expect(result.error.code).toBe(400);
+    expect(result.error.message).toContain('cannot be shipped');
+  });
+
+  it('should update all items with tracking information', async () => {
+    await orderShip({ 
+      orderId: 'ORD-002', 
+      trackingNumber: 'TRK987654321', 
+      carrier: 'Chronopost' 
+    });
+    const order = orders.find(o => o.id === 'ORD-002');
+    expect(order?.items.every(item => 
+      item.status === 'shipped' && 
+      item.trackingNumber === 'TRK987654321' && 
+      item.carrier === 'Chronopost'
+    )).toBe(true);
+  });
+});
+
+describe('orderCancel', () => {
+  beforeEach(() => {
+    resetOrdersData();
+  });
+
+  it('should cancel a pending order successfully', async () => {
+    const result = await orderCancel({ 
+      orderId: 'ORD-001', 
+      reason: 'Client request' 
+    });
+    expect(result.success).toBe(true);
+    expect(result.message).toBe('Order cancelled successfully');
+    expect(result.order.status).toBe('cancelled');
+    expect(result.order.cancellationReason).toBe('Client request');
+  });
+
+  it('should cancel an acknowledged order successfully', async () => {
+    const result = await orderCancel({ 
+      orderId: 'ORD-002', 
+      reason: 'Out of stock' 
+    });
+    expect(result.success).toBe(true);
+    expect(result.order.status).toBe('cancelled');
+  });
+
+  it('should return error when orderId does not exist', async () => {
+    const result = await orderCancel({ 
+      orderId: 'NONEXISTENT', 
+      reason: 'Test' 
+    });
+    expect(result.error).toBeDefined();
+    expect(result.error.code).toBe(404);
+  });
+
+  it('should return error when order cannot be cancelled', async () => {
+    const result = await orderCancel({ 
+      orderId: 'ORD-003', // shipped order
+      reason: 'Test' 
+    });
+    expect(result.error).toBeDefined();
+    expect(result.error.code).toBe(400);
+    expect(result.error.message).toContain('cannot be cancelled');
+  });
+
+  it('should update all items status to cancelled', async () => {
+    await orderCancel({ 
+      orderId: 'ORD-001', 
+      reason: 'Client request' 
+    });
+    const order = orders.find(o => o.id === 'ORD-001');
+    expect(order?.items.every(item => item.status === 'cancelled')).toBe(true);
   });
 });

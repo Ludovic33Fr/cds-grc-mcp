@@ -8,7 +8,12 @@ import {
   productList,
   productGet,
   productCount,
-  productGetVariants
+  productGetVariants,
+  orderList,
+  orderGet,
+  orderAcknowledge,
+  orderShip,
+  orderCancel
 } from './mcp.js';
 
 // Create server instance
@@ -193,6 +198,172 @@ server.tool(
           {
             type: "text",
             text: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          },
+        ],
+      };
+    }
+  },
+);
+
+// ===== OUTILS DE GESTION DES COMMANDES =====
+
+server.tool(
+  "OrderList",
+  "List orders with filtering, sorting, and pagination. Supports filtering by status, salesChannel, date range, customer email, and reference.",
+  {
+    filters: z.object({
+      status: z.union([z.string(), z.array(z.string())]).optional(),
+      salesChannel: z.union([z.string(), z.array(z.string())]).optional(),
+      createdAtFrom: z.string().optional(),
+      createdAtTo: z.string().optional(),
+      customerEmail: z.string().optional(),
+      reference: z.string().optional(),
+    }).optional(),
+    cursor: z.string().nullable().optional(),
+    limit: z.number().min(1).max(1000).default(100),
+    sortBy: z.enum(["createdAt", "updatedAt", "reference", "totalAmount"]).default("createdAt"),
+    sortDir: z.enum(["asc", "desc"]).default("desc"),
+  },
+  async (params) => {
+    try {
+      const result = await orderList(params);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error: ${error instanceof Error ? error.message : 'Unknown error'}!`,
+          },
+        ],
+      };
+    }
+  },
+);
+
+server.tool(
+  "OrderGet",
+  "Get detailed information about a specific order by its ID.",
+  {
+    orderId: z.string().describe("The unique identifier of the order"),
+  },
+  async (params) => {
+    try {
+      const result = await orderGet(params);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error: ${error instanceof Error ? error.message : 'Unknown error'}!`,
+          },
+        ],
+      };
+    }
+  },
+);
+
+server.tool(
+  "OrderAcknowledge",
+  "Acknowledge an order (global acceptance, not per line). Only pending orders can be acknowledged.",
+  {
+    orderId: z.string().describe("The unique identifier of the order to acknowledge"),
+  },
+  async (params) => {
+    try {
+      const result = await orderAcknowledge(params);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error: ${error instanceof Error ? error.message : 'Unknown error'}!`,
+          },
+        ],
+      };
+    }
+  },
+);
+
+server.tool(
+  "OrderShip",
+  "Ship an order with tracking number and carrier information. Only acknowledged orders can be shipped.",
+  {
+    orderId: z.string().describe("The unique identifier of the order to ship"),
+    trackingNumber: z.string().describe("The tracking number for the shipment"),
+    carrier: z.string().describe("The name of the shipping carrier"),
+  },
+  async (params) => {
+    try {
+      const result = await orderShip(params);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error: ${error instanceof Error ? error.message : 'Unknown error'}!`,
+          },
+        ],
+      };
+    }
+  },
+);
+
+server.tool(
+  "OrderCancel",
+  "Cancel an order. Only pending or acknowledged orders can be cancelled.",
+  {
+    orderId: z.string().describe("The unique identifier of the order to cancel"),
+    reason: z.string().describe("The reason for cancelling the order"),
+  },
+  async (params) => {
+    try {
+      const result = await orderCancel(params);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error: ${error instanceof Error ? error.message : 'Unknown error'}!`,
           },
         ],
       };

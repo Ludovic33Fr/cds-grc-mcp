@@ -35,4 +35,33 @@ export declare function productGetVariants(params: {
     cursor?: string | null;
     limit?: number;
 }): Promise<any>;
+export declare function orderList(params: {
+    filters?: {
+        status?: string | string[];
+        salesChannel?: string | string[];
+        createdAtFrom?: string;
+        createdAtTo?: string;
+        customerEmail?: string;
+        reference?: string;
+    };
+    cursor?: string | null;
+    limit?: number;
+    sortBy?: "createdAt" | "updatedAt" | "reference" | "totalAmount";
+    sortDir?: "asc" | "desc";
+}): Promise<any>;
+export declare function orderGet(params: {
+    orderId: string;
+}): Promise<any>;
+export declare function orderAcknowledge(params: {
+    orderId: string;
+}): Promise<any>;
+export declare function orderShip(params: {
+    orderId: string;
+    trackingNumber: string;
+    carrier: string;
+}): Promise<any>;
+export declare function orderCancel(params: {
+    orderId: string;
+    reason: string;
+}): Promise<any>;
 //# sourceMappingURL=mcp.d.ts.map

@@ -1,4 +1,4 @@
-import { products } from './mockData.js';
+import { products, orders } from './mockData.js';
 export async function authenticateOAuth(clientId, clientSecret, redirectUri, scope) {
     const defaultScope = scope || 'read write';
     return `
@@ -166,7 +166,21 @@ function generateCursor(gtin) {
 }
 // Fonction utilitaire pour décoder un curseur
 function decodeCursor(cursor) {
-    return Buffer.from(cursor, 'base64').toString();
+    try {
+        // Vérifier que le curseur est un base64 valide
+        if (!/^[A-Za-z0-9+/]*={0,2}$/.test(cursor)) {
+            throw new Error('Invalid cursor format');
+        }
+        const decoded = Buffer.from(cursor, 'base64').toString();
+        // Vérifier que le décodage produit quelque chose de valide
+        if (!decoded || decoded.trim() === '') {
+            throw new Error('Invalid cursor format');
+        }
+        return decoded;
+    }
+    catch (error) {
+        throw new Error('Invalid cursor format');
+    }
 }
 // Méthode product.list
 export async function productList(params) {
@@ -329,6 +343,331 @@ export async function productGetVariants(params) {
         return {
             items,
             nextCursor
+        };
+    }
+    catch (error) {
+        return {
+            error: {
+                code: 400,
+                message: error instanceof Error ? error.message : "Unknown error"
+            }
+        };
+    }
+}
+// ===== MÉTHODES DE GESTION DES COMMANDES =====
+// Fonction utilitaire pour filtrer les commandes
+function filterOrders(filters) {
+    return orders.filter(order => {
+        if (filters.status) {
+            const statusFilter = Array.isArray(filters.status) ? filters.status : [filters.status];
+            if (!statusFilter.includes(order.status))
+                return false;
+        }
+        if (filters.salesChannel) {
+            const channelFilter = Array.isArray(filters.salesChannel) ? filters.salesChannel : [filters.salesChannel];
+            if (!channelFilter.includes(order.salesChannel))
+                return false;
+        }
+        if (filters.createdAtFrom) {
+            const fromDate = new Date(filters.createdAtFrom);
+            if (isNaN(fromDate.getTime()))
+                throw new Error('Invalid createdAtFrom date');
+            if (new Date(order.createdAt) < fromDate)
+                return false;
+        }
+        if (filters.createdAtTo) {
+            const toDate = new Date(filters.createdAtTo);
+            if (isNaN(toDate.getTime()))
+                throw new Error('Invalid createdAtTo date');
+            if (new Date(order.createdAt) > toDate)
+                return false;
+        }
+        if (filters.customerEmail) {
+            if (!order.customer.email.toLowerCase().includes(filters.customerEmail.toLowerCase())) {
+                return false;
+            }
+        }
+        if (filters.reference) {
+            if (!order.reference.toLowerCase().includes(filters.reference.toLowerCase())) {
+                return false;
+            }
+        }
+        return true;
+    });
+}
+// Fonction utilitaire pour trier les commandes
+function sortOrders(orders, sortBy, sortDir) {
+    const sorted = [...orders];
+    sorted.sort((a, b) => {
+        let aValue, bValue;
+        switch (sortBy) {
+            case 'createdAt':
+                aValue = new Date(a.createdAt);
+                bValue = new Date(b.createdAt);
+                break;
+            case 'updatedAt':
+                aValue = new Date(a.updatedAt);
+                bValue = new Date(b.updatedAt);
+                break;
+            case 'reference':
+                aValue = a.reference;
+                bValue = b.reference;
+                break;
+            case 'totalAmount':
+                aValue = a.totalAmount;
+                bValue = b.totalAmount;
+                break;
+            default:
+                aValue = new Date(a.createdAt);
+                bValue = new Date(b.createdAt);
+        }
+        if (sortDir === 'asc') {
+            return aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
+        }
+        else {
+            return aValue > bValue ? -1 : aValue < bValue ? 1 : 0;
+        }
+    });
+    return sorted;
+}
+// Méthode order.list
+export async function orderList(params) {
+    try {
+        // Validation des paramètres
+        if (params.limit !== undefined && params.limit < 1) {
+            return {
+                error: {
+                    code: 400,
+                    message: "Limit must be between 1 and 1000"
+                }
+            };
+        }
+        if (params.limit && params.limit > 1000) {
+            return {
+                error: {
+                    code: 429,
+                    message: "Limit exceeds maximum allowed value"
+                }
+            };
+        }
+        const limit = Math.min(params.limit || 100, 1000);
+        // Filtrage et tri
+        let filteredOrders = filterOrders(params.filters || {});
+        const sortBy = params.sortBy || "createdAt";
+        const sortDir = params.sortDir || "desc";
+        filteredOrders = sortOrders(filteredOrders, sortBy, sortDir);
+        // Pagination
+        let startIndex = 0;
+        if (params.cursor) {
+            try {
+                const decodedCursor = decodeCursor(params.cursor);
+                const cursorIndex = filteredOrders.findIndex(o => o.id === decodedCursor);
+                if (cursorIndex !== -1) {
+                    startIndex = cursorIndex + 1;
+                }
+            }
+            catch (e) {
+                return {
+                    error: {
+                        code: 400,
+                        message: "Invalid cursor format"
+                    }
+                };
+            }
+        }
+        const paginatedOrders = filteredOrders.slice(startIndex, startIndex + limit);
+        // Génération du curseur suivant
+        let nextCursor = null;
+        if (startIndex + limit < filteredOrders.length) {
+            nextCursor = generateCursor(filteredOrders[startIndex + limit - 1].id);
+        }
+        return {
+            items: paginatedOrders,
+            nextCursor,
+            itemsPerPage: limit
+        };
+    }
+    catch (error) {
+        return {
+            error: {
+                code: 400,
+                message: error instanceof Error ? error.message : "Unknown error"
+            }
+        };
+    }
+}
+// Méthode order.get
+export async function orderGet(params) {
+    try {
+        const order = orders.find(o => o.id === params.orderId);
+        if (!order) {
+            return {
+                error: {
+                    code: 404,
+                    message: "Order not found"
+                }
+            };
+        }
+        return order;
+    }
+    catch (error) {
+        return {
+            error: {
+                code: 400,
+                message: error instanceof Error ? error.message : "Unknown error"
+            }
+        };
+    }
+}
+// Méthode order.acknowledge
+export async function orderAcknowledge(params) {
+    try {
+        const order = orders.find(o => o.id === params.orderId);
+        if (!order) {
+            return {
+                error: {
+                    code: 404,
+                    message: "Order not found"
+                }
+            };
+        }
+        // Vérifier que la commande peut être acceptée
+        if (order.status !== "pending") {
+            return {
+                error: {
+                    code: 400,
+                    message: `Order cannot be acknowledged. Current status: ${order.status}`
+                }
+            };
+        }
+        // Mise à jour du statut (simulation)
+        const now = new Date().toISOString();
+        order.status = "acknowledged";
+        order.acknowledgedAt = now;
+        order.updatedAt = now;
+        // Mise à jour du statut de tous les articles
+        order.items.forEach(item => {
+            item.status = "acknowledged";
+        });
+        return {
+            success: true,
+            message: "Order acknowledged successfully",
+            order: {
+                id: order.id,
+                reference: order.reference,
+                status: order.status,
+                acknowledgedAt: order.acknowledgedAt,
+                updatedAt: order.updatedAt
+            }
+        };
+    }
+    catch (error) {
+        return {
+            error: {
+                code: 400,
+                message: error instanceof Error ? error.message : "Unknown error"
+            }
+        };
+    }
+}
+// Méthode order.ship
+export async function orderShip(params) {
+    try {
+        const order = orders.find(o => o.id === params.orderId);
+        if (!order) {
+            return {
+                error: {
+                    code: 404,
+                    message: "Order not found"
+                }
+            };
+        }
+        // Vérifier que la commande peut être expédiée
+        if (order.status !== "acknowledged") {
+            return {
+                error: {
+                    code: 400,
+                    message: `Order cannot be shipped. Current status: ${order.status}`
+                }
+            };
+        }
+        // Mise à jour du statut (simulation)
+        const now = new Date().toISOString();
+        order.status = "shipped";
+        order.shippedAt = now;
+        order.updatedAt = now;
+        // Mise à jour du statut et des informations de suivi de tous les articles
+        order.items.forEach(item => {
+            item.status = "shipped";
+            item.trackingNumber = params.trackingNumber;
+            item.carrier = params.carrier;
+        });
+        return {
+            success: true,
+            message: "Order shipped successfully",
+            order: {
+                id: order.id,
+                reference: order.reference,
+                status: order.status,
+                shippedAt: order.shippedAt,
+                updatedAt: order.updatedAt,
+                trackingNumber: params.trackingNumber,
+                carrier: params.carrier
+            }
+        };
+    }
+    catch (error) {
+        return {
+            error: {
+                code: 400,
+                message: error instanceof Error ? error.message : "Unknown error"
+            }
+        };
+    }
+}
+// Méthode order.cancel
+export async function orderCancel(params) {
+    try {
+        const order = orders.find(o => o.id === params.orderId);
+        if (!order) {
+            return {
+                error: {
+                    code: 404,
+                    message: "Order not found"
+                }
+            };
+        }
+        // Vérifier que la commande peut être annulée
+        const cancellableStatuses = ["pending", "acknowledged"];
+        if (!cancellableStatuses.includes(order.status)) {
+            return {
+                error: {
+                    code: 400,
+                    message: `Order cannot be cancelled. Current status: ${order.status}`
+                }
+            };
+        }
+        // Mise à jour du statut (simulation)
+        const now = new Date().toISOString();
+        order.status = "cancelled";
+        order.cancelledAt = now;
+        order.updatedAt = now;
+        order.cancellationReason = params.reason;
+        // Mise à jour du statut de tous les articles
+        order.items.forEach(item => {
+            item.status = "cancelled";
+        });
+        return {
+            success: true,
+            message: "Order cancelled successfully",
+            order: {
+                id: order.id,
+                reference: order.reference,
+                status: order.status,
+                cancelledAt: order.cancelledAt,
+                updatedAt: order.updatedAt,
+                cancellationReason: order.cancellationReason
+            }
         };
     }
     catch (error) {
