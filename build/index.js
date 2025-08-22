@@ -2,7 +2,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { getInfoSeller, authenticateOAuth, } from './mcp.js';
+import { getInfoSeller, productList, productGet, productCount, productGetVariants } from './mcp.js';
 // Create server instance
 const server = new McpServer({
     name: "cds-grc-mcp",
@@ -37,18 +37,115 @@ server.tool("GetInfoSeller", "Get seller information from an e-commerce marketpl
         };
     }
 });
-server.tool("AuthenticateOAuth", "Authenticate using OAuth2 flow with PKCE (Proof Key for Code Exchange) and return an authentication token. This method opens a browser for user login and handles the complete OAuth2 authorization flow securely.", {}, async () => {
+// Register Product tools
+server.tool("ProductList", "List products with filtering, sorting, and pagination. Returns products respecting visibility rules based on createdBySeller flag.", {
+    filters: z.object({
+        gtin: z.union([z.string(), z.array(z.string())]).optional(),
+        productReference: z.union([z.string(), z.array(z.string())]).optional(),
+        categoryReference: z.union([z.string(), z.array(z.string())]).optional(),
+        brandReference: z.string().optional(),
+        updatedAtFrom: z.string().optional(),
+        updatedAtTo: z.string().optional(),
+        q: z.string().optional(),
+    }).optional(),
+    cursor: z.string().nullable().optional(),
+    limit: z.number().min(1).max(1000).default(100),
+    sortBy: z.enum(["updatedAt", "createdAt", "gtin"]).default("updatedAt"),
+    sortDir: z.enum(["asc", "desc"]).default("desc"),
+    "mockOnly.fields": z.array(z.string()).optional(),
+}, async (params) => {
     try {
-        const clientId = "ftc78cbA5pb2cmjnHS23QAoU";
-        const clientSecret = undefined;
-        const redirectUri = "http://localhost:3000/callback";
-        const scope = "photo";
-        const result = await authenticateOAuth(clientId, clientSecret, redirectUri, scope);
+        const result = await productList(params);
         return {
             content: [
                 {
                     type: "text",
-                    text: result,
+                    text: JSON.stringify(result, null, 2),
+                },
+            ],
+        };
+    }
+    catch (error) {
+        return {
+            content: [
+                {
+                    type: "text",
+                    text: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                },
+            ],
+        };
+    }
+});
+server.tool("ProductGet", "Get a single product by GTIN. Returns product respecting visibility rules based on createdBySeller flag.", {
+    gtin: z.string().describe("The GTIN (EAN) of the product to retrieve."),
+}, async ({ gtin }) => {
+    try {
+        const result = await productGet({ gtin });
+        return {
+            content: [
+                {
+                    type: "text",
+                    text: JSON.stringify(result, null, 2),
+                },
+            ],
+        };
+    }
+    catch (error) {
+        return {
+            content: [
+                {
+                    type: "text",
+                    text: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                },
+            ],
+        };
+    }
+});
+server.tool("ProductCount", "Count products matching the specified filters.", {
+    filters: z.object({
+        gtin: z.union([z.string(), z.array(z.string())]).optional(),
+        productReference: z.union([z.string(), z.array(z.string())]).optional(),
+        categoryReference: z.union([z.string(), z.array(z.string())]).optional(),
+        brandReference: z.string().optional(),
+        updatedAtFrom: z.string().optional(),
+        updatedAtTo: z.string().optional(),
+        q: z.string().optional(),
+    }).optional(),
+}, async (params) => {
+    try {
+        const result = await productCount(params);
+        return {
+            content: [
+                {
+                    type: "text",
+                    text: JSON.stringify(result, null, 2),
+                },
+            ],
+        };
+    }
+    catch (error) {
+        return {
+            content: [
+                {
+                    type: "text",
+                    text: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                },
+            ],
+        };
+    }
+});
+server.tool("ProductGetVariants", "Get product variants by group reference with pagination. Returns products respecting visibility rules.", {
+    groupReference: z.string().describe("The group reference to find variants for."),
+    cursor: z.string().nullable().optional(),
+    limit: z.number().min(1).max(1000).default(100),
+}, async (params) => {
+    try {
+        const result = await productGetVariants(params);
+        return {
+            content: [
+                {
+                    type: "text",
+                    text: JSON.stringify(result, null, 2),
                 },
             ],
         };
