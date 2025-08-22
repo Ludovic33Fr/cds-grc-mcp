@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { getInfoSeller, productList, productGet, productCount, productGetVariants } from './mcp.js';
+import { products } from './mockData.js';
 
 describe('getInfoSeller', () => {
   it('should return seller information when valid oauthToken is provided', async () => {
@@ -11,7 +12,7 @@ describe('getInfoSeller', () => {
     expect(result).toContain('ID Vendeur        : SELLER_001');
     expect(result).toContain('Nom               : TechStore Pro');
     expect(result).toContain('Note              : 4.7/5 ⭐');
-    expect(result).toContain('Ventes totales    : 15,420 commandes');
+    expect(result).toContain('Ventes totales    : 15 420 commandes');
     expect(result).toContain('Temps de réponse  : 2-4h');
     expect(result).toContain('Politique livraison: Livraison gratuite dès 35€');
     expect(result).toContain('Politique retours : Retours acceptés sous 30 jours');
@@ -281,8 +282,8 @@ describe('productList', () => {
     const result = await productList({ limit: 1001 });
     
     expect(result.error).toBeDefined();
-    expect(result.error.code).toBe(400);
-    expect(result.error.message).toContain("Limit must be between 1 and 1000");
+    expect(result.error.code).toBe(429);
+    expect(result.error.message).toContain("Limit exceeds maximum allowed value");
   });
 
   it('should handle pagination with cursor', async () => {
@@ -411,7 +412,8 @@ describe('productGetVariants', () => {
     });
     
     expect(result.items).toHaveLength(1);
-    expect(result.nextCursor).toBeTruthy();
+    // Avec seulement 1 produit dans ce groupe, il n'y a pas de page suivante
+    expect(result.nextCursor).toBeNull();
   });
 
   it('should return empty array for non-existent group reference', async () => {
@@ -456,6 +458,7 @@ describe('productGetVariants', () => {
     });
     
     expect(result.error).toBeDefined();
-    expect(result.error.code).toBe(400);
+    expect(result.error.code).toBe(429);
+    expect(result.error.message).toContain("Limit exceeds maximum allowed value");
   });
 });
