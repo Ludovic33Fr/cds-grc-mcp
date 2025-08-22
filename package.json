@@ -1,0 +1,39 @@
+{
+    "name": "@ludovicl33/cds-grc-mcp",
+    "version": "1.0.0",
+      "main": "build/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+      "test": "vitest",
+      "start": "node build/index.js",
+      "dev": "tsc && node build/index.js",
+      "test-mcp-client": "node test-mcp-client.js",
+      "prepublishOnly": "npm run build"
+    },
+    "keywords": [
+      "mcp",
+      "test",
+      "oauth2",
+      "ecommerce",
+      "grc",
+      "model-context-protocol"
+    ],
+    "author": "Ludovic Lefebvre",
+    "license": "MIT",
+    "description": "MCP server for simluated GRC operations into Agent IA",
+    "devDependencies": {
+      "@types/node": "^22.10.0",
+      "node-fetch": "^3.3.2",
+      "typescript": "^5.4.0",
+      "vite": "4.4.9",
+      "vitest": "0.34.6"
+    },
+    "dependencies": {
+      "@modelcontextprotocol/sdk": "^1.4.0",
+      "commander": "^14.0.0",
+      "node-fetch": "^3.3.2",
+      "zod": "^3.22.4"
+    }
+  }
+  
